@@ -78,8 +78,8 @@ func _ready() -> void:
 
 	_banner = _label("", 72, PixelUi.GOLD)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.add_theme_constant_override("outline_size", 10)
-	_banner.add_theme_color_override("font_outline_color", PixelUi.INK)
+	_banner.add_theme_font_override("font", Parts.font_medium())
+	_hard_shadow(_banner)
 	_banner.modulate.a = 0.0
 
 	_strip = Panel.new()
@@ -133,6 +133,17 @@ static func _place_icon(icon: TextureRect, width: float, height: float, scale: f
 	var size := Vector2(icon.texture.get_size()) * scale
 	icon.size = size
 	icon.position = Vector2((width - size.x) / 2.0 + dx, (height - 2.0 * PixelUi.UNIT - size.y) / 2.0)
+
+
+# Text that has to read over anything: a thin dark edge and a hard drop shadow, pixel style. (A thick outline closes
+# up the gaps in the pixel letters: C reads as O.)
+static func _hard_shadow(l: Label) -> void:
+	l.add_theme_constant_override("outline_size", 4)
+	l.add_theme_color_override("font_outline_color", PixelUi.INK)
+	l.add_theme_color_override("font_shadow_color", PixelUi.INK)
+	l.add_theme_constant_override("shadow_offset_x", 5)
+	l.add_theme_constant_override("shadow_offset_y", 5)
+	l.add_theme_constant_override("shadow_outline_size", 4)
 
 
 func _label(text: String, font_size: int, color: Color, parent: Control = null) -> Label:
@@ -245,8 +256,7 @@ func set_sound(on: bool) -> void:
 ## gets there (the cabinet's marquee then rolls up to the new score).
 func fly_score(gained: int, from: Vector2, to: Vector2, color: Color, on_land: Callable) -> void:
 	var fly := _label("+" + Fx.number(gained), 60, color)
-	fly.add_theme_constant_override("outline_size", 10)
-	fly.add_theme_color_override("font_outline_color", PixelUi.INK)
+	_hard_shadow(fly)
 	fly.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	fly.size = Vector2(600, 90)
 	fly.pivot_offset = fly.size / 2.0

@@ -64,7 +64,7 @@ func burst(at: Vector3, color: Color, count: int, style := "sparkle", scale := 0
 	p.one_shot = true
 	p.explosiveness = 1.0
 	p.amount = maxi(count, 1)
-	p.color = Color(color.lerp(Color.WHITE, 0.15), 0.5)
+	p.color = Color(color.lerp(Color.WHITE, 0.15), 0.36)
 	p.color_ramp = _fade
 	p.direction = Vector3.UP
 	if style == "sparkle":
@@ -100,9 +100,9 @@ func burst(at: Vector3, color: Color, count: int, style := "sparkle", scale := 0
 ## Floating text that pops in, rises and fades ("+3", "CRACK!").
 func pop_text(at: Vector3, text: String, color: Color, size: float) -> void:
 	var label := Label3D.new()
-	label.font = Parts.font()
+	label.font = Parts.font_medium()
 	label.font_size = 96
-	label.outline_size = 14
+	label.outline_size = 7 # thin: a thick outline closes up the pixel letters
 	label.outline_modulate = Color(0.05, 0.03, 0.1, 1)
 	label.modulate = color
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED

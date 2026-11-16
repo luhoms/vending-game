@@ -11,6 +11,7 @@ const GLASS := 3 ## see-through
 static var _meshes := {}
 static var _materials := {}
 static var _font: FontVariation
+static var _font_medium: Font
 
 
 ## A rotation the way Roblox's CFrame.Angles(rx, ry, rz) makes one (X, then Y, then Z), in radians.
@@ -149,6 +150,14 @@ static func font() -> Font:
 	return _font
 
 
+## The same font a weight lighter, for text with an edge round it (callouts, pop text): its letters keep their gaps.
+static func font_medium() -> Font:
+	if _font_medium == null:
+		var path := "res://assets/fonts/pixelify-sans-500.woff2"
+		_font_medium = load(path) if ResourceLoader.exists(path) else font()
+	return _font_medium
+
+
 ## Text printed on a plate `width` x `height` studs, facing +Z, scaled to fill it like a TextScaled label.
 static func label(parent: Node, position: Vector3, width: float, height: float, text: String, color: Color) -> Label3D:
 	var l := Label3D.new()
@@ -183,3 +192,4 @@ static func clear_cache() -> void:
 	_meshes.clear()
 	_materials.clear()
 	_font = null
+	_font_medium = null
