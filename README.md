@@ -25,8 +25,24 @@ many streaks of each size there have been.
 Install [Godot 4.7](https://godotengine.org/download) (standard build, not .NET), open this folder as a project and
 press Play. On a desktop, click, or press Space, Enter or E.
 
-To put it on a phone, add an Android or iOS export preset in the editor (Project > Export). Portrait orientation is
-already set in the project settings.
+## Trying it on an iPhone (no Mac needed)
+
+The repository builds an unsigned iPhone app on GitHub; a sideloading tool on your own computer then signs it with
+your Apple ID and installs it. With a free Apple ID the app runs for 7 days and then needs installing again the same
+way.
+
+1. On GitHub, open the repository's **Actions** tab, choose **iOS build (unsigned)** and press **Run workflow**.
+2. When the run finishes, open it and download **vending-game-unsigned-ipa** from its Artifacts. Unzip it to get
+   `vending-game-unsigned.ipa`.
+3. Install a sideloading tool on your computer (Sideloadly and AltStore both run on Windows and macOS; on Windows they
+   need Apple's iTunes and iCloud installed), plug the phone in, and give the tool the `.ipa` and your Apple ID.
+4. On the phone: Settings > General > VPN & Device Management, trust your Apple ID; and on iOS 16 or later,
+   Settings > Privacy & Security > Developer Mode, on.
+
+The build is checked up to the `.ipa`; installing it has not been tried by the project yet.
+
+For Android, add an Android export preset in the editor (Project > Export). Portrait orientation is already set in
+the project settings.
 
 ## Tests
 
