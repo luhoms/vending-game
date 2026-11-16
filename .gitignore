@@ -2,8 +2,9 @@
 .godot/
 *.translation
 export_presets.cfg.bak
-# Builds
-build/
+# Builds (the empty .gdignore keeps Godot from importing what is exported there)
+build/*
+!build/.gdignore
 *.apk
 *.aab
 *.ipa

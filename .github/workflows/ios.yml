@@ -1,0 +1,97 @@
+# Builds the game for iPhone WITHOUT signing it, and keeps the result as a download ("artifact") on the run's page.
+#
+# An unsigned .ipa can't be installed as it is. A sideloading tool on your own computer (Sideloadly or AltStore, on
+# Windows or macOS) signs it with your Apple ID and puts it on your phone; with a free Apple ID the app works for 7
+# days and then has to be installed again. Nothing here needs a Mac of your own or a paid developer account.
+#
+# Run it by hand: the repository's Actions tab > "iOS build (unsigned)" > Run workflow.
+name: iOS build (unsigned)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+  GODOT_RELEASE: 4.7.2-stable
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Godot and the iOS export template
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-cache
+          key: godot-${{ env.GODOT_RELEASE }}-ios
+
+      - name: Download Godot and the iOS export template
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/godot-cache/templates
+          cd ~/godot-cache
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}"
+          curl -fsSL -o godot.zip "${base}/Godot_v${GODOT_RELEASE}_macos.universal.zip"
+          unzip -q godot.zip
+          rm godot.zip
+          # The templates archive holds every platform (1.3 GB); only the iOS one is kept.
+          curl -fsSL -o templates.tpz "${base}/Godot_v${GODOT_RELEASE}_export_templates.tpz"
+          unzip -q -j templates.tpz templates/ios.zip templates/version.txt -d templates
+          rm templates.tpz
+
+      - name: Install the export template
+        run: |
+          set -euo pipefail
+          dir="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dir"
+          cp ~/godot-cache/templates/ios.zip ~/godot-cache/templates/version.txt "$dir/"
+          echo "GODOT=$HOME/godot-cache/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+
+      - name: Import the project
+        run: |
+          "$GODOT" --headless --import
+
+      - name: Run the rule checks
+        run: |
+          "$GODOT" --headless -s tests/vend_checks.gd
+
+      - name: Export the Xcode project
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios
+          "$GODOT" --headless --export-release "iOS" build/ios/vending-game.ipa
+          test -d build/ios/vending-game.xcodeproj
+
+      - name: Build the app without signing
+        run: |
+          set -euo pipefail
+          xcodebuild -project build/ios/vending-game.xcodeproj -scheme vending-game \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/derived \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build/xcodebuild.log 2>&1 || { tail -n 120 build/xcodebuild.log; exit 1; }
+          tail -n 15 build/xcodebuild.log
+
+      - name: Package the .ipa
+        run: |
+          set -euo pipefail
+          app=$(find build/derived/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          test -n "$app"
+          mkdir -p build/ipa/Payload
+          cp -R "$app" build/ipa/Payload/
+          (cd build/ipa && zip -q -r -y ../vending-game-unsigned.ipa Payload)
+          ls -lh build/vending-game-unsigned.ipa
+
+      - name: Keep the .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: vending-game-unsigned-ipa
+          path: build/vending-game-unsigned.ipa
+          if-no-files-found: error
