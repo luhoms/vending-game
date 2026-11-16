@@ -1,38 +1,49 @@
 class_name Cabinet
 extends Node3D
-## The vending machine: six fruit behind the glass, the cursor, the display panel, life lamps, the tray flap and a ring
-## of chasing bulbs. Built in code, part for part from the Roblox version's VendGame.buildCabinet, with the same sizes
-## (studs). It stands on the origin and faces +Z.
+## The vending machine, in the style of an early-2000s console game: a black cabinet with flat, hard-pixel art
+## (scripts/pixel_tex.gd). A pale marquee across the top shows the score; under it a white-framed window holds six
+## fruit on coloured tiles; the panel beside it carries a screen, heart lamps and the big button over side art in the
+## machine's colour; a hatch at the bottom throws the fruit out when a machine is cleared.
+##
+## It keeps the Roblox cabinet's overall size and the cells' places (studs), stands on the origin and faces +Z.
 ##
 ## Feel, as in the Roblox version: a thick white cursor that snaps from cell to cell (no easing, so its timing reads
-## exactly) and shows over lit fruit too; bulbs that chase in step with the cursor and heat toward white with each
-## speed burst; a full machine VENDS, its fruit shooting out of the tray flap onto the floor while the next machine is
-## already running.
+## exactly) and shows over lit fruit too; lamps that chase round the cabinet in step with the cursor and heat toward
+## white with each speed burst. A fruit's tile is dark until it is lit, then glows in the fruit's colour.
 
 const BODY_W := 11.0
 const BODY_H := 17.4
 const BODY_D := 3.0
 const BASE_H := 0.6
 const FRONT_Z := 2.6 ## the cabinet's front face
-const GLASS_Z := FRONT_Z + 0.06
 const ITEM_Z := 1.7
-const WIN_LEFT := -5.05 ## the glass window: two columns of items
+const WIN_LEFT := -5.05 ## the window: two columns of items
 const WIN_RIGHT := 1.55
 const WIN_TOP := 15.9 ## three rows
 const WIN_BOTTOM := 4.6
 const CELL_W := (WIN_RIGHT - WIN_LEFT) / 2.0
 const CELL_H := (WIN_TOP - WIN_BOTTOM) / 3.0
+const CURSOR_Z := FRONT_Z + 0.14
 const PANEL_X := 3.4 ## middle of the right-hand panel
 const TRAY_Y := 2.55
 const TOP_Y := BASE_H + BODY_H
-const BULB_TOP := TOP_Y + 0.45 + 0.12 ## the highest thing on the cabinet
+const BULB_TOP := TOP_Y + 0.45 + 0.13 ## the highest thing on the cabinet
+const MARQUEE_Y := TOP_Y - 0.9
+const MARQUEE_H := 1.35
+
+const BLACK := Color8(14, 14, 20)
+const INK := Color8(26, 16, 44) ## the marquee's lettering
+const PAPER := Color8(238, 234, 222) ## the marquee and the window frame
+const MARQUEE_RED := Color8(214, 36, 60)
+const TILE_OFF := Color8(40, 44, 70) ## an unlit fruit's tile
+## The colour each fruit's tile glows when it is lit, in ring order (apple, banana, orange, cherry, strawberry, pear).
+const TILE_LIT: Array[Color] = [Color8(255, 150, 150), Color8(255, 236, 130), Color8(255, 190, 110), Color8(255, 150, 200), Color8(255, 170, 170), Color8(196, 240, 130)]
 
 
 class Cell:
 	var index := 0
 	var centre := Vector3.ZERO ## the item's resting place
-	var back: MeshInstance3D ## glows when lit
-	var frame: Array[MeshInstance3D] = [] ## four thin neon bars round the cell: gold when lit
+	var back: MeshInstance3D ## the tile behind it: dark, or glowing when lit
 	var item: Node3D ## the fruit (or bomb); it sways and spins
 	var decor: Node3D ## what marks an item cell: halo, cage, ice, tag (stays still)
 	var shown := "" ## the board cell this was dressed for, so it is only rebuilt when it changes
@@ -45,14 +56,17 @@ var fx: Effects
 var cells: Array[Cell] = []
 var tier_color := Fx.WHITE
 
-var _body: MeshInstance3D
-var _body_home := Transform3D.IDENTITY
-var _title: Label3D
+var _body: Node3D
+var _score_label: Label3D
+var _best_label: Label3D
+var _score := 0.0 ## where the marquee's counter is heading
+var _shown_score := 0.0
 var _display := {}
 var _lives_label: Label3D
 var _life_lamps: Array[MeshInstance3D] = []
 var _bulbs: Array[MeshInstance3D] = []
 var _trims: Array[MeshInstance3D] = []
+var _art: Array[MeshInstance3D] = []
 var _button: MeshInstance3D
 var _button_home := Transform3D.IDENTITY
 var _flap: Node3D
@@ -64,7 +78,6 @@ var _cursor_glow: MeshInstance3D
 var _flying: Array = [] ## fruit shooting out of the tray: dictionaries (see _shoot)
 var _pending: Array = [] ## fruit waiting their turn to shoot: {at, kind, slot}
 var _clock := 0.0 ## seconds this cabinet has been updated for (drives the decoration, not the rules)
-var _title_hidden_until := 0.0
 var _trims_until := -1.0 ## while the clock is short of this, the trims hold a flash colour
 var _rng := RandomNumberGenerator.new()
 
@@ -80,130 +93,125 @@ static func _at(x: float, y: float, z: float) -> Transform3D:
 
 func _build() -> void:
 	var P := Parts
+	var T := PixelTex
 	var mid_y := BASE_H + BODY_H / 2.0
-	var dark := Color8(16, 16, 22)
-	var black := Color8(8, 8, 13)
-	var chrome := Color8(214, 218, 228)
+	var win_w := WIN_RIGHT - WIN_LEFT
+	var win_h := WIN_TOP - WIN_BOTTOM
+	var win_x := (WIN_LEFT + WIN_RIGHT) / 2.0
+	var win_y := (WIN_TOP + WIN_BOTTOM) / 2.0
+	var face_z := FRONT_Z + 0.04 # flat art sits just proud of the body
 
-	P.part(self, Vector3(BODY_W + 0.6, BASE_H, BODY_D + 0.6), _at(0, BASE_H / 2.0, 1.1), dark, P.METAL)
-	# The body is a back wall plus a front frame round the window, so the items behind the glass can be seen.
+	P.part(self, Vector3(BODY_W + 0.6, BASE_H, BODY_D + 0.6), _at(0, BASE_H / 2.0, 1.1), Color8(8, 8, 12))
+	# The body: a back wall plus a front frame round the window, so the items sit inside it. It shudders as one.
+	_body = Node3D.new()
+	add_child(_body)
 	var back_z := FRONT_Z - BODY_D
-	_body = P.part(self, Vector3(BODY_W, BODY_H, 1), _at(0, mid_y, back_z + 0.5), Fx.CHARCOAL)
-	_body_home = _body.transform
+	P.part(_body, Vector3(BODY_W, BODY_H, 1), _at(0, mid_y, back_z + 0.5), BLACK)
 	var front_d := FRONT_Z - (back_z + 1.0)
 	var front_z := back_z + 1.0 + front_d / 2.0
 	var shell := func(x0: float, x1: float, y0: float, y1: float) -> void:
-		P.part(_body, Vector3(x1 - x0, y1 - y0, front_d), _body_home.affine_inverse() * _at((x0 + x1) / 2.0, (y0 + y1) / 2.0, front_z), Fx.CHARCOAL)
+		P.part(_body, Vector3(x1 - x0, y1 - y0, front_d), _at((x0 + x1) / 2.0, (y0 + y1) / 2.0, front_z), BLACK)
 	shell.call(-BODY_W / 2.0, WIN_LEFT, BASE_H, TOP_Y)
 	shell.call(WIN_RIGHT, BODY_W / 2.0, BASE_H, TOP_Y)
 	shell.call(WIN_LEFT, WIN_RIGHT, WIN_TOP, TOP_Y)
 	# Below the window: a recess for the tray (behind the flap), solid above and below it.
 	shell.call(WIN_LEFT, WIN_RIGHT, BASE_H, TRAY_Y - 0.8)
 	shell.call(WIN_LEFT, WIN_RIGHT, TRAY_Y + 0.8, WIN_BOTTOM)
-	P.part(self, Vector3(BODY_W + 0.4, 0.35, BODY_D + 0.3), _at(0, TOP_Y + 0.17, FRONT_Z - BODY_D / 2.0), dark, P.METAL)
-	# Glossy front panels round the window.
-	P.part(self, Vector3(0.35, BODY_H - 0.6, 0.06), _at(-BODY_W / 2.0 + 0.18, mid_y, FRONT_Z + 0.03), Fx.SKIN)
-	P.part(self, Vector3(3.4, BODY_H - 0.6, 0.06), _at(PANEL_X, mid_y, FRONT_Z + 0.03), Fx.SKIN)
+	P.part(self, Vector3(BODY_W + 0.4, 0.35, BODY_D + 0.3), _at(0, TOP_Y + 0.17, FRONT_Z - BODY_D / 2.0), Color8(8, 8, 12))
 
-	# The header sign.
-	P.part(self, Vector3(BODY_W - 0.6, 1.1, 0.08), _at(0, TOP_Y - 0.75, FRONT_Z + 0.06), black)
-	_title = P.label(self, Vector3(0, TOP_Y - 0.75, FRONT_Z + 0.12), BODY_W - 1.0, 0.9, "", Fx.WHITE)
+	# Side art in the machine's colour: a thin strip down the left and the whole right-hand panel.
+	_art.append(P.plate(self, Vector2(0.36, BODY_H - 0.6), _at(-BODY_W / 2.0 + 0.2, mid_y, face_z), T.art(), Fx.WHITE, false, false, Vector2(0.1, 1)))
+	_art.append(P.plate(self, Vector2(3.4, BODY_H - 0.6), _at(PANEL_X, mid_y, face_z), T.art()))
 
-	# The window: dark back wall, glass, chrome frame.
-	var win_w := WIN_RIGHT - WIN_LEFT
-	var win_h := WIN_TOP - WIN_BOTTOM
-	var win_x := (WIN_LEFT + WIN_RIGHT) / 2.0
-	var win_y := (WIN_TOP + WIN_BOTTOM) / 2.0
-	P.part(self, Vector3(win_w, win_h, 0.1), _at(win_x, win_y, 0.6), Color8(10, 11, 20))
-	P.part(self, Vector3(win_w, win_h, 0.06), _at(win_x, win_y, GLASS_Z), Color8(175, 210, 228), P.GLASS, "block", 0.1)
-	P.part(self, Vector3(win_w + 0.3, 0.14, 0.14), _at(win_x, WIN_TOP + 0.07, GLASS_Z), chrome, P.METAL)
-	P.part(self, Vector3(win_w + 0.3, 0.14, 0.14), _at(win_x, WIN_BOTTOM - 0.07, GLASS_Z), chrome, P.METAL)
-	for x: float in [WIN_LEFT - 0.07, WIN_RIGHT + 0.07]:
-		P.part(self, Vector3(0.14, win_h, 0.14), _at(x, win_y, GLASS_Z), chrome, P.METAL)
+	# The marquee: the score, in ink on a pale plate with a red rim.
+	P.plate(self, Vector2(BODY_W - 0.6, MARQUEE_H), _at(0, MARQUEE_Y, face_z + 0.02), T.marquee(PAPER, MARQUEE_RED))
+	var text_z := face_z + 0.05
+	P.label(self, Vector3(-4.2, MARQUEE_Y, text_z), 1.7, 0.46, "SCORE", MARQUEE_RED)
+	_score_label = P.label(self, Vector3(-0.45, MARQUEE_Y - 0.03, text_z), 5.6, 1.5, "0", INK)
+	P.label(self, Vector3(3.8, MARQUEE_Y + 0.28, text_z), 2.2, 0.4, "BEST", MARQUEE_RED)
+	_best_label = P.label(self, Vector3(3.8, MARQUEE_Y - 0.2, text_z), 2.4, 0.5, "0", INK)
 
-	# The cells: a glowing back, a shelf with its spiral, the item, and four neon bars.
+	# The window: a pale frame, its inside walls, and a pale back that shows between the tiles as a grid.
+	P.part(self, Vector3(win_w, win_h, 0.06), _at(win_x, win_y, 0.63), PAPER.darkened(0.2), P.NEON)
+	var frame := 0.24
+	P.part(self, Vector3(win_w + 2 * frame, frame, 0.2), _at(win_x, WIN_TOP + frame / 2.0, FRONT_Z + 0.06), PAPER, P.NEON)
+	P.part(self, Vector3(win_w + 2 * frame, frame, 0.2), _at(win_x, WIN_BOTTOM - frame / 2.0, FRONT_Z + 0.06), PAPER, P.NEON)
+	for x: float in [WIN_LEFT - frame / 2.0, WIN_RIGHT + frame / 2.0]:
+		P.part(self, Vector3(frame, win_h, 0.2), _at(x, win_y, FRONT_Z + 0.06), PAPER, P.NEON)
+
+	# The cells: a tile and the item in front of it.
 	for index in Vend.ICONS:
 		var spot: Array = Vend.CELLS[index]
 		var cx: float = WIN_LEFT + (spot[0] - 0.5) * CELL_W
 		var cy: float = WIN_TOP - (spot[1] - 0.5) * CELL_H
 		var cell := Cell.new()
 		cell.index = index
-		cell.back = P.part(self, Vector3(CELL_W - 0.3, CELL_H - 0.3, 0.06), _at(cx, cy, 0.7), Fx.DIM, P.NEON, "block", 0.75, true)
-		P.part(self, Vector3(CELL_W - 0.2, 0.12, 1.8), _at(cx, cy - CELL_H / 2.0 + 0.25, 1.6), chrome, P.METAL)
-		var coil_at := P.cf(Vector3(cx, cy - CELL_H / 2.0 + 0.48, 1.6), 0, 90, 0)
-		P.part(self, Vector3(1.6, 0.3, 0.3), coil_at, Color8(170, 175, 190), P.METAL, "cylinder")
-		for k in 4: # the spiral's turns
-			P.part(self, Vector3(0.08, 0.62, 0.62), coil_at * _at(-0.6 + k * 0.4, 0, 0), Color8(200, 205, 215), P.METAL, "cylinder")
-		var w := CELL_W - 0.12
-		var h := CELL_H - 0.12
-		var z := GLASS_Z - 0.12
-		cell.frame.append(P.part(self, Vector3(w, 0.12, 0.08), _at(cx, cy + h / 2.0, z), Fx.DIM, P.NEON, "block", 1.0, true))
-		cell.frame.append(P.part(self, Vector3(w, 0.12, 0.08), _at(cx, cy - h / 2.0, z), Fx.DIM, P.NEON, "block", 1.0, true))
-		cell.frame.append(P.part(self, Vector3(0.12, h, 0.08), _at(cx - w / 2.0, cy, z), Fx.DIM, P.NEON, "block", 1.0, true))
-		cell.frame.append(P.part(self, Vector3(0.12, h, 0.08), _at(cx + w / 2.0, cy, z), Fx.DIM, P.NEON, "block", 1.0, true))
+		cell.back = P.plate(self, Vector2(CELL_W - 0.3, CELL_H - 0.3), _at(cx, cy, 0.7), T.tile(), TILE_OFF)
 		cell.centre = Vector3(cx, cy + 0.15, ITEM_Z)
 		cell.spin = (index + 1) * 1.3
 		cells.append(cell)
 
-	# The cursor: one thick white frame and a soft glow plate in front of the glass, snapped to the cell under the
+	# The cursor: one thick white frame and a soft glow plate in front of the window, snapped to the cell under the
 	# cursor. It sits on top of everything, so you can see it over lit fruit as well as unlit.
 	var cw := CELL_W - 0.05
 	var ch := CELL_H - 0.05
-	var cz := GLASS_Z + 0.08
 	for bar: Array in [[cw, Fx.CURSOR_WIDTH, 0.0, ch / 2.0], [cw, Fx.CURSOR_WIDTH, 0.0, -ch / 2.0], [Fx.CURSOR_WIDTH, ch, -cw / 2.0, 0.0], [Fx.CURSOR_WIDTH, ch, cw / 2.0, 0.0]]:
-		var part := P.part(self, Vector3(bar[0], bar[1], 0.1), _at(0, 0, cz), Fx.WHITE, P.NEON, "block", 1.0, true)
+		var part := P.part(self, Vector3(bar[0], bar[1], 0.1), _at(0, 0, CURSOR_Z), Fx.WHITE, P.NEON, "block", 1.0, true)
 		_cursor_bars.append(part)
 		_cursor_offsets.append(Vector3(bar[2], bar[3], 0))
-	_cursor_glow = P.part(self, Vector3(cw - 0.2, ch - 0.2, 0.04), _at(0, 0, cz - 0.04), Fx.WHITE, P.NEON, "block", 1.0 - Fx.CURSOR_GLOW, true)
+	_cursor_glow = P.part(self, Vector3(cw - 0.2, ch - 0.2, 0.04), _at(0, 0, CURSOR_Z - 0.04), Fx.WHITE, P.NEON, "block", 1.0 - Fx.CURSOR_GLOW, true)
 
-	# The right-hand panel: the display, the life lamps, the big button and a coin slot.
+	# The right-hand panel: a screen with scan lines, heart lamps, the big button, a coin slot and a keypad.
 	var screen_top := 14.15 + 1.6
-	P.part(self, Vector3(2.7, 3.2, 0.06), _at(PANEL_X, 14.15, FRONT_Z + 0.08), Color8(6, 8, 14))
+	P.part(self, Vector3(2.9, 3.4, 0.08), _at(PANEL_X, 14.15, face_z + 0.03), Color8(8, 8, 12))
+	P.plate(self, Vector2(2.7, 3.2), _at(PANEL_X, 14.15, face_z + 0.08), T.scanlines(), Color8(22, 40, 44), false, false, Vector2(1, 30))
 	var line := func(name: String, y: float, h: float, color: Color) -> void:
-		_display[name] = P.label(self, Vector3(PANEL_X, screen_top - (y + h / 2.0) / 100.0, FRONT_Z + 0.13), 2.5, h / 100.0, "", color)
+		_display[name] = P.label(self, Vector3(PANEL_X, screen_top - (y + h / 2.0) / 100.0, face_z + 0.11), 2.5, h / 100.0, "", color)
 	line.call("caption", 8.0, 40.0, Fx.SOFT)
 	line.call("pot", 50.0, 90.0, Fx.GOLD)
 	line.call("mult", 150.0, 80.0, Fx.PINK)
 	line.call("speed", 240.0, 60.0, Fx.CYAN)
 
-	for i in 5:
-		_life_lamps.append(P.part(self, Vector3.ONE * 0.48, _at(PANEL_X - 1.2 + i * 0.6, 11.35, FRONT_Z + 0.12), Fx.DIM, P.NEON, "ball", 1.0, true))
-	P.part(self, Vector3(2.7, 0.45, 0.04), _at(PANEL_X, 12.0, FRONT_Z + 0.08), black)
-	_lives_label = P.label(self, Vector3(PANEL_X, 12.0, FRONT_Z + 0.12), 2.6, 0.42, "ONE SHOT", Fx.SOFT)
+	P.part(self, Vector3(2.9, 1.35, 0.08), _at(PANEL_X, 11.55, face_z + 0.03), Color8(8, 8, 12))
+	_lives_label = P.label(self, Vector3(PANEL_X, 11.98, face_z + 0.09), 2.6, 0.36, "ONE SHOT", Fx.SOFT)
+	for i in 3:
+		_life_lamps.append(P.plate(self, Vector2(0.72, 0.64), _at(PANEL_X + (i - 1) * 0.86, 11.3, face_z + 0.09), T.heart(), Fx.RED, false, true))
 
-	P.part(self, Vector3(0.2, 2.5, 2.5), P.cf(Vector3(PANEL_X, 8.9, FRONT_Z + 0.1), 0, 90, 0), dark, P.METAL, "cylinder")
+	P.part(self, Vector3(0.2, 2.6, 2.6), P.cf(Vector3(PANEL_X, 8.9, FRONT_Z + 0.1), 0, 90, 0), Color8(8, 8, 12), P.PLASTIC, "cylinder")
+	P.part(self, Vector3(0.24, 2.3, 2.3), P.cf(Vector3(PANEL_X, 8.9, FRONT_Z + 0.13), 0, 90, 0), PAPER, P.NEON, "cylinder")
 	_button = P.part(self, Vector3(0.4, 2.0, 2.0), P.cf(Vector3(PANEL_X, 8.9, FRONT_Z + 0.25), 0, 90, 0), Fx.RED, P.NEON, "cylinder")
 	_button_home = _button.transform
-	P.part(self, Vector3(2.6, 0.5, 0.04), _at(PANEL_X, 7.25, FRONT_Z + 0.08), black)
-	P.label(self, Vector3(PANEL_X, 7.25, FRONT_Z + 0.12), 2.5, 0.46, "TAP!", Fx.WHITE)
-	P.part(self, Vector3(0.18, 0.9, 0.08), _at(PANEL_X - 0.6, 5.6, FRONT_Z + 0.08), Color8(200, 205, 215), P.METAL)
-	P.part(self, Vector3(1.2, 1.4, 0.06), _at(PANEL_X + 0.6, 5.6, FRONT_Z + 0.08), Color8(40, 42, 52), P.METAL)
+	P.part(self, Vector3(2.6, 0.56, 0.06), _at(PANEL_X, 7.2, face_z + 0.03), Color8(8, 8, 12))
+	P.label(self, Vector3(PANEL_X, 7.2, face_z + 0.08), 2.4, 0.5, "TAP!", PAPER)
+	P.part(self, Vector3(0.9, 1.5, 0.06), _at(PANEL_X - 0.8, 5.5, face_z + 0.03), Color8(8, 8, 12))
+	P.part(self, Vector3(0.16, 0.8, 0.08), _at(PANEL_X - 0.8, 5.5, face_z + 0.06), Color8(190, 194, 208), P.NEON)
+	P.plate(self, Vector2(1.3, 1.7), _at(PANEL_X + 0.6, 5.5, face_z + 0.05), T.keypad())
 
-	# The tray the items fall into, behind a flap that swings open.
-	P.part(self, Vector3(win_w, 1.6, 0.12), _at(win_x, TRAY_Y, FRONT_Z - BODY_D + 1.08), Color8(6, 6, 10))
+	# The tray the items fall into, behind a hatch that swings open.
+	P.part(self, Vector3(win_w, 1.6, 0.12), _at(win_x, TRAY_Y, FRONT_Z - BODY_D + 1.08), Color8(4, 4, 8))
 	_flap = Node3D.new()
-	_flap_home = _at(win_x, TRAY_Y, FRONT_Z + 0.12)
+	_flap_home = _at(win_x, TRAY_Y, FRONT_Z + 0.1)
 	_flap.transform = _flap_home
 	add_child(_flap)
-	P.part(_flap, Vector3(win_w - 0.3, _flap_size_y, 0.06), Transform3D.IDENTITY, Color8(60, 62, 75), P.GLASS, "block", 0.55)
-	P.label(_flap, Vector3(0, 0, 0.05), 3.0, 0.7, "PUSH", Fx.SOFT)
+	P.plate(_flap, Vector2(win_w - 0.3, _flap_size_y), Transform3D.IDENTITY, T.hatch())
 
-	# Neon edges and a ring of bulbs round the front that chase in step with the cursor.
+	# Edges in the machine's colour and a ring of square lamps round the front that chase in step with the cursor.
 	for side: float in [-1.0, 1.0]:
-		_trims.append(P.part(self, Vector3(0.12, BODY_H, 0.12), _at(side * BODY_W / 2.0, mid_y, FRONT_Z + 0.02), Fx.WHITE, P.NEON, "block", 1.0, true))
-	_trims.append(P.part(self, Vector3(BODY_W + 0.9, 0.05, 0.06), _at(0, 0.06, FRONT_Z + 0.5), Fx.WHITE, P.NEON, "block", 1.0, true))
+		_trims.append(P.part(self, Vector3(0.14, BODY_H, 0.14), _at(side * BODY_W / 2.0, mid_y, FRONT_Z + 0.02), Fx.WHITE, P.NEON, "block", 1.0, true))
+	_trims.append(P.part(self, Vector3(BODY_W + 0.9, 0.06, 0.08), _at(0, 0.06, FRONT_Z + 0.5), Fx.WHITE, P.NEON, "block", 1.0, true))
 	var edge := BODY_W / 2.0 - 0.15
 	var bulb := func(x: float, y: float) -> void:
-		_bulbs.append(P.part(self, Vector3.ONE * 0.24, _at(x, y, FRONT_Z + 0.16), Fx.DIM, P.NEON, "ball", 1.0, true))
+		_bulbs.append(P.part(self, Vector3(0.24, 0.24, 0.12), _at(x, y, FRONT_Z + 0.14), Fx.DIM, P.NEON, "block", 1.0, true))
 	for i in 23:
 		bulb.call(-edge, 1.2 + i * 0.68)
 	for i in range(1, 15):
 		bulb.call(-edge + i * (2.0 * edge) / 15.0, TOP_Y + 0.45)
 	for i in range(22, -1, -1):
 		bulb.call(edge, 1.2 + i * 0.68)
+	_tint_art()
 
 
-# ===== what is behind the glass =====
+# ===== what is behind the window =====
 
 func _clear_cell(cell: Cell) -> void:
 	if cell.item:
@@ -261,7 +269,7 @@ func _dress_cell(cell: Cell, spec: Dictionary, hit_count: int) -> void:
 			tag_color = Fx.KIND_TAG[spec.kind].color
 	# The tag under the fruit says what the cell is.
 	P.part(decor, Vector3(CELL_W - 0.6, 0.55, 0.04), _at(0, -CELL_H / 2.0 + 0.6, 0.95), Color8(8, 8, 13))
-	var tag := P.label(decor, Vector3(0, -CELL_H / 2.0 + 0.6, 0.99), CELL_W - 0.8, 0.5, tag_text, tag_color)
+	var tag := P.label(decor, Vector3(0, -CELL_H / 2.0 + 0.6, 0.99), CELL_W - 0.7, 0.66, tag_text, tag_color)
 	tag.name = "TagText"
 	if hit_count >= 1 and spec.kind == "strong":
 		for bar in decor.get_children():
@@ -281,7 +289,7 @@ func show_board(run: Vend, pop: bool) -> void:
 				create_tween().tween_property(cell.item, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-## Put one of every kind of item behind the glass for a few frames while the game loads, so the first one met in
+## Put one of every kind of item behind the window for a few frames while the game loads, so the first one met in
 ## play doesn't cost a stutter while its graphics are built.
 func warm_up() -> void:
 	var kinds := [["mult", 5], ["strong", 1], ["bomb", 1], ["ice", 1], ["reverse", 1], ["mult", 100]]
@@ -305,18 +313,37 @@ func tray_position() -> Vector3:
 	return to_global(Vector3((WIN_LEFT + WIN_RIGHT) / 2.0, TRAY_Y, FRONT_Z + 0.5))
 
 
-func sign_position() -> Vector3:
-	return to_global(Vector3(0, TOP_Y - 0.75, FRONT_Z + 0.2))
+## The middle of the score on the marquee.
+func score_position() -> Vector3:
+	return to_global(Vector3(-0.45, MARQUEE_Y, FRONT_Z + 0.2))
+
+
+## The top of the cabinet, in the middle.
+func top_position() -> Vector3:
+	return to_global(Vector3(0, BULB_TOP, FRONT_Z))
+
+
+# ===== the marquee =====
+
+## The score to show. `at_once` sets it (a new run); otherwise the counter rolls up to it and the digits kick.
+func set_score(score: int, at_once := false) -> void:
+	_score = score
+	if at_once:
+		_shown_score = score
+		Parts.set_text(_score_label, Fx.number(score))
+	else:
+		_score_label.scale = Vector3.ONE * 1.2
+		create_tween().tween_property(_score_label, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func set_best(best: int) -> void:
+	Parts.set_text(_best_label, Fx.number(best))
 
 
 # ===== reactions to a press =====
 
 func flash_cell(index: int, color: Color) -> void:
-	var cell := cells[index]
-	for bar in cell.frame:
-		Parts.set_color(bar, color)
-	Parts.set_color(cell.back, color)
-	Parts.set_alpha(cell.back, 1.0)
+	Parts.set_color(cells[index].back, color)
 
 
 func flash_all(color: Color) -> void:
@@ -363,7 +390,7 @@ func remove_decor(index: int) -> void:
 		cell.decor = null
 
 
-## The bomb went off: it is gone from its shelf.
+## The bomb went off: it is gone from its tile.
 func remove_item(index: int) -> void:
 	var cell := cells[index]
 	if cell.item:
@@ -379,24 +406,24 @@ func press_button() -> void:
 
 ## A mistake shudders the whole machine.
 func shudder() -> void:
-	_body.transform = _body_home * _at(0.15, 0, 0)
-	create_tween().tween_property(_body, "transform", _body_home, 0.25).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	_body.position = Vector3(0.15, 0, 0)
+	create_tween().tween_property(_body, "position", Vector3.ZERO, 0.25).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 
 
+## The machine the run is on: only its colour shows (the edges, the lamps and the side art).
 func set_tier(tier: int) -> void:
 	tier_color = Modes.tier_color(tier)
-	Parts.set_text(_title, Modes.tier_title(tier))
-	_title.modulate = Color(tier_color, _title.modulate.a)
+	_tint_art()
 	if _trims_until < 0.0:
 		set_trims(tier_color)
 
 
-## A callout is showing on the header sign: the machine's name steps aside for `seconds`.
-func hide_title(seconds: float) -> void:
-	_title_hidden_until = _clock + seconds
+func _tint_art() -> void:
+	for plate in _art:
+		Parts.set_color(plate, tier_color.lerp(Color8(40, 30, 90), 0.35))
 
 
-## Flash the neon edges a colour for a moment (red when a run ends), then back to the machine's colour.
+## Flash the edges a colour for a moment (red when a run ends), then back to the machine's colour.
 func flash_trims(color: Color, seconds: float) -> void:
 	set_trims(color)
 	_trims_until = _clock + seconds
@@ -407,25 +434,19 @@ func set_trims(color: Color) -> void:
 		Parts.set_color(trim, color)
 
 
-## The panel: the pot (in score), the streak MULT and any multiplier fruit, the speed, the lives.
+## The screen: the pot (in score), the streak MULT and any multiplier fruit, the speed, the lives.
 func update_display(run: Vend, t: float) -> void:
 	if run == null:
 		return
-	if run.over:
-		Parts.set_text(_display.caption, "JAMMED")
-		Parts.set_text(_display.pot, "--")
-		Parts.set_text(_display.mult, "")
-		Parts.set_text(_display.speed, "")
-	else:
-		Parts.set_text(_display.caption, "POT")
-		Parts.set_text(_display.pot, Fx.number(floorf(run.pot * run.fruit_mult * Modes.machine_value(run.tier))))
-		Parts.set_text(_display.mult, Fx.times(run.mult()) + ("  x%d" % run.fruit_mult if run.fruit_mult > 1 else ""))
-		_show_speed(run, t)
+	Parts.set_text(_display.caption, "POT")
+	Parts.set_text(_display.pot, Fx.number(floorf(run.pot * run.fruit_mult * Modes.machine_value(run.tier))))
+	Parts.set_text(_display.mult, Fx.times(run.mult()) + ("  x%d" % run.fruit_mult if run.fruit_mult > 1 else ""))
+	_show_speed(run, t)
 	Parts.set_text(_lives_label, "LIVES" if run.max_lives > 1 else "ONE SHOT")
 	for i in _life_lamps.size():
 		var lamp := _life_lamps[i]
-		lamp.visible = i < run.max_lives and run.max_lives > 1
-		Parts.set_color(lamp, Color8(80, 255, 140) if i < run.lives else Color8(60, 20, 24))
+		lamp.visible = i < run.max_lives
+		Parts.set_color(lamp, Fx.RED if i < run.lives else Color8(70, 30, 44))
 
 
 func _show_speed(run: Vend, t: float) -> void:
@@ -435,7 +456,7 @@ func _show_speed(run: Vend, t: float) -> void:
 
 # ===== vending =====
 
-# Swing the tray's flap open (outward, about its top edge) and let it fall shut again.
+# Swing the hatch open (outward, about its top edge) and let it fall shut again.
 func _swing_flap() -> void:
 	var set_swing := func(k: float) -> void:
 		var hinge := _flap_home * _at(0, _flap_size_y / 2.0, 0)
@@ -445,7 +466,7 @@ func _swing_flap() -> void:
 	tween.tween_method(set_swing, 1.0, 0.0, 0.45).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 
 
-## A full machine vends: the fruit in the window pops away and the same six shoot out of the tray at the bottom, one
+## A full machine vends: the fruit in the window pops away and the same six shoot out of the hatch at the bottom, one
 ## right after another, while the next machine restocks. The fruit on the floor clears away a few seconds later.
 func vend_all() -> void:
 	for old: Dictionary in _flying:
@@ -468,18 +489,18 @@ func vend_all() -> void:
 		if was_bomb:
 			item.queue_free() # the bomb isn't vended
 			continue
-		# Gone from the shelf at once (a quick shrink and a sparkle)...
+		# Gone from its tile at once (a quick shrink and a sparkle)...
 		if fx:
 			fx.burst(to_global(item.position), Fx.GOLD, 5, "sparkle", Fx.FX_SCALE)
 		item.scale = Vector3.ONE * 0.5
 		get_tree().create_timer(0.06).timeout.connect(item.queue_free)
-		# ...and out of the tray.
+		# ...and out of the hatch.
 		order += 1
 		_pending.append({"at": _clock + (order - 1) * Fx.SHOOT_STEP, "kind": Vend.ITEMS[cell.index], "slot": order})
 
 
-# Shoot one fruit out of the tray: it leaves the flap fast, arcs onto the floor in front of the machine, bounces and
-# rolls to a stop. Pure decoration: the next machine is already running.
+# Shoot one fruit out of the hatch: it leaves fast, arcs onto the floor in front of the machine, bounces and rolls to a
+# stop. Pure decoration: the next machine is already running.
 func _shoot(kind: String, slot: int) -> void:
 	var fruit := Fruit.build(kind)
 	fruit.position = Vector3((WIN_LEFT + WIN_RIGHT) / 2.0 + (slot - 3.5) * 0.7, TRAY_Y - 0.2, FRONT_Z - 0.2)
@@ -538,35 +559,35 @@ func _update_flying(dt: float) -> void:
 
 # ===== every frame =====
 
-## Draw the machine for time `t` of `run` (null or over = idle). `dt` is the frame's length.
+## Draw the machine for time `t` of `run` (null or over = idle). `dt` is the frame's length. Returns the cell the cursor
+## is on (-1 for none).
 func update(run: Vend, t: float, dt: float) -> int:
 	_clock += dt
 	_update_flying(dt)
-	_title.modulate.a = move_toward(_title.modulate.a, 0.0 if _clock < _title_hidden_until else 1.0, dt * 8.0)
 	if _trims_until >= 0.0 and _clock >= _trims_until:
 		_trims_until = -1.0
 		set_trims(tier_color)
+	# The marquee's counter rolls up to the score.
+	if _shown_score != _score:
+		_shown_score = move_toward(_shown_score, _score, maxf(absf(_score - _shown_score) * minf(dt * 9.0, 1.0), 1.0))
+		Parts.set_text(_score_label, Fx.number(_shown_score))
+
 	var live := run != null and not run.over
 	var cursor := run.index_at(t) if live else -1
 	var color := tier_color
 
 	for cell in cells:
 		var lit := live and run.lit[cell.index]
-		var frame_color := Fx.GOLD if lit else color.lerp(Fx.DIM, 0.6)
-		for bar in cell.frame:
-			Parts.set_color(bar, Parts.get_color(bar).lerp(frame_color, minf(dt * 30.0, 1.0)))
-		# Lit fruit sit on a warm gold glow, kept fairly dark so the white cursor stands out over it.
-		var unlit := Fx.DIM
+		# A tile is dark until its fruit is lit, then glows in the fruit's colour. An item's tile hints at what it is.
+		var unlit := TILE_OFF
 		if cell.kind == "bomb":
-			unlit = Fx.RED.lerp(Fx.DIM, 0.55 + 0.25 * sin(_clock * 8.0))
+			unlit = Fx.RED.lerp(TILE_OFF, 0.45 + 0.25 * sin(_clock * 8.0))
 		elif cell.kind == "mult":
-			unlit = (Color.from_hsv(fposmod(_clock * 0.5, 1.0), 0.8, 1.0) if cell.mult >= 100 else Fx.mult_color(cell.mult)).lerp(Fx.DIM, 0.5)
+			unlit = (Color.from_hsv(fposmod(_clock * 0.5, 1.0), 0.8, 1.0) if cell.mult >= 100 else Fx.mult_color(cell.mult)).lerp(TILE_OFF, 0.5)
 		elif Fx.KIND_TAG.has(cell.kind):
-			unlit = (Fx.KIND_TAG[cell.kind].color as Color).lerp(Fx.DIM, 0.7)
-		var back_color := Fx.GOLD.lerp(Fx.DIM, Fx.LIT_DARKEN) if lit else unlit
-		var now_color := Parts.get_color(cell.back).lerp(back_color, minf(dt * 18.0, 1.0))
-		now_color.a = 0.9 if lit else 0.7
-		(cell.back.material_override as StandardMaterial3D).albedo_color = now_color
+			unlit = (Fx.KIND_TAG[cell.kind].color as Color).lerp(TILE_OFF, 0.65)
+		var target_color := TILE_LIT[cell.index] if lit else unlit
+		Parts.set_color(cell.back, Parts.get_color(cell.back).lerp(target_color, minf(dt * 18.0, 1.0)))
 		# A x100 fruit's halo and tag cycle through the rainbow; a bomb's fuse sparks.
 		if cell.decor and cell.kind == "mult" and cell.mult >= 100:
 			var hue := Color.from_hsv(fposmod(_clock * 0.5, 1.0), 0.85, 1.0)
@@ -580,7 +601,7 @@ func update(run: Vend, t: float, dt: float) -> int:
 			var spark := cell.item.get_node_or_null("Spark") as MeshInstance3D
 			if spark:
 				Parts.set_alpha(spark, 0.4 if _rng.randf() < 0.3 else 1.0)
-		# Items sway on their shelves; lit ones turn to show off.
+		# Items sway on their tiles; lit ones turn to show off.
 		if cell.item:
 			cell.spin += dt * (2.4 if lit else 0.9)
 			cell.item.rotation.y = cell.spin if lit else sin(cell.spin) * 0.35
@@ -594,14 +615,13 @@ func update(run: Vend, t: float, dt: float) -> int:
 		var bar := _cursor_bars[i]
 		bar.visible = target != null
 		if target:
-			bar.position = Vector3(target.back.position.x, target.back.position.y, GLASS_Z + 0.08) + _cursor_offsets[i]
-			Parts.set_color(bar, Fx.WHITE.lerp(Fx.GOLD, 0.25) if run.lit[cursor] else Fx.WHITE)
+			bar.position = Vector3(target.back.position.x, target.back.position.y, CURSOR_Z) + _cursor_offsets[i]
 	_cursor_glow.visible = target != null
 	if target:
 		Parts.set_alpha(_cursor_glow, 1.0 - (Fx.CURSOR_GLOW + sin(_clock * 14.0) * 0.04))
-		_cursor_glow.position = Vector3(target.back.position.x, target.back.position.y, GLASS_Z + 0.04)
+		_cursor_glow.position = Vector3(target.back.position.x, target.back.position.y, CURSOR_Z - 0.04)
 
-	# The bulbs chase round the cabinet in step with the cursor, faster as it speeds up; a burst heats them to white.
+	# The lamps chase round the cabinet in step with the cursor, faster as it speeds up; a burst heats them to white.
 	var count := _bulbs.size()
 	var phase := run.phase_at(t) if live else _clock * 0.6
 	var head := phase / Vend.ICONS * count

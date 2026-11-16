@@ -34,7 +34,7 @@ const SWAY_DEGREES := 0.12 ## slow idle drift so the view is never perfectly sti
 const SWAY_SPEED := 0.35
 const CAMERA_FOV := 40.0 ## vertical field of view, degrees
 const VIEW_WIDTH := 12.4 ## studs of world shown across the screen at the cabinet's front, at least
-const TOP_BAND := 0.13 ## share of the screen's height kept clear above the cabinet for the score
+const TOP_BAND := 0.1 ## share of the screen's height kept clear above the cabinet for the buttons and callouts
 const BOTTOM_BAND := 0.04 ## ...and below it for the floor
 const SPARE_TOP := 0.6 ## on tall screens, this share of the spare height goes above the cabinet
 
@@ -48,11 +48,11 @@ const DRAW_AHEAD_FRAMES := 1.0
 const HIT_SCALE: Array[int] = [0, 2, 4, 7, 9, 12, 14, 16] ## semitones above the ding for the 1st, 2nd... hit on a machine
 const CLEAR_ARPEGGIO: Array[int] = [12, 16, 19, 24] ## the all-lit arpeggio
 const ARPEGGIO_STEP := 0.045 ## seconds between its notes
-const DING_VOLUME := 0.6
-const SPARKLE_VOLUME := 0.28
+const DING_VOLUME := 0.5
+const SPARKLE_VOLUME := 0.16
 const SPARKLE_PITCH := 1.15
-const COMPLETE_VOLUME := 0.75
-const ERROR_VOLUME := 0.9
+const COMPLETE_VOLUME := 0.6
+const ERROR_VOLUME := 0.6
 const TICK_VOLUME := 0.07
 
 # Haptics (milliseconds)

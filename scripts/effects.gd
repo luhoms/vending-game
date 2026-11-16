@@ -102,7 +102,7 @@ func pop_text(at: Vector3, text: String, color: Color, size: float) -> void:
 	var label := Label3D.new()
 	label.font = Parts.font()
 	label.font_size = 96
-	label.outline_size = 28
+	label.outline_size = 14
 	label.outline_modulate = Color(0.05, 0.03, 0.1, 1)
 	label.modulate = color
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED

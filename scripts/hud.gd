@@ -1,10 +1,10 @@
 class_name Hud
 extends CanvasLayer
-## Everything drawn flat on the screen, in a light pixel-art style (scripts/pixel_ui.gd): a slim row of buttons along
-## the top (mode, lives as hearts, stats, sound), the score and best, the STREAK badge, the short callouts
-## ("CLEARED!  STREAK x3"), the run-over strip and the stats window.
+## Everything drawn flat on the screen, in a light pixel-art style (scripts/pixel_ui.gd): one slim row along the top
+## (mode, lives as hearts, the STREAK badge, stats, sound), the short callouts ("CLEARED!  STREAK x3") in the gap under
+## it, the run-over strip and the stats window. The score itself is on the cabinet's marquee.
 ##
-## Nothing here is drawn over the fruit: callouts sit on the cabinet's header sign and the strip on its base.
+## Nothing here is drawn over the fruit: callouts sit above the cabinet and the strip on its base.
 
 signal mode_pressed
 signal lives_pressed
@@ -14,7 +14,7 @@ signal stats_toggled(open: bool)
 const MARGIN := 24.0
 const GAP := 12.0
 const ROW_A := 84.0 ## the button row's height
-const BAND := 240.0 ## the whole top band's height
+const BAND := 196.0 ## the whole top band's height: the row, then room for a callout
 const HEARTS := 3
 
 var _root: Control
@@ -24,9 +24,6 @@ var _stats_button: Button
 var _sound_button: Button
 var _sound_icon: TextureRect
 var _hearts: Array[TextureRect] = []
-var _score_caption: Label
-var _score_label: Label
-var _best_label: Label
 var _streak_panel: Panel
 var _streak_caption: Label
 var _streak_label: Label
@@ -40,8 +37,6 @@ var _stats: Control
 var _cover: ColorRect
 var _save: SaveData
 var _variant := "traditional"
-var _score := 0.0 ## where the counter is heading
-var _shown := 0.0 ## what it shows now
 var _streak := 1.0
 var _top := 0.0 ## the notch / status bar inset, in canvas units
 var _bottom := 0.0
@@ -73,22 +68,17 @@ func _ready() -> void:
 	_sound_button.pressed.connect(func() -> void: sound_pressed.emit())
 	_sound_icon = _icon(_sound_button, PixelUi.SPEAKER, PixelUi.TEXT)
 
-	_score_caption = _label("SCORE", 26, PixelUi.SOFT)
-	_score_label = _label("0", 84, PixelUi.TEXT)
-	_best_label = _label("BEST 0", 28, PixelUi.SOFT)
-
 	_streak_panel = Panel.new()
 	_streak_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_streak_panel.add_theme_stylebox_override("panel", PixelUi.box(PixelUi.PANEL, PixelUi.PANEL_EDGE))
 	_root.add_child(_streak_panel)
-	_streak_caption = _label("STREAK", 26, PixelUi.SOFT, _streak_panel)
-	_streak_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_streak_label = _label("x1", 72, PixelUi.SOFT, _streak_panel)
-	_streak_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_streak_caption = _label("STREAK", 24, PixelUi.SOFT, _streak_panel)
+	_streak_label = _label("x1", 52, PixelUi.SOFT, _streak_panel)
+	_streak_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	_banner = _label("", 72, PixelUi.GOLD)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.add_theme_constant_override("outline_size", 20)
+	_banner.add_theme_constant_override("outline_size", 10)
 	_banner.add_theme_color_override("font_outline_color", PixelUi.INK)
 	_banner.modulate.a = 0.0
 
@@ -168,9 +158,10 @@ func band_height() -> float:
 	return _top + BAND
 
 
-## Where callouts go: the screen position of the cabinet's header sign.
-func set_banner_y(y: float) -> void:
-	_banner_y = y
+## Where callouts go: between the row of buttons and the top of the cabinet (`cabinet_top` is its screen height).
+func set_cabinet_top(cabinet_top: float) -> void:
+	var row_bottom := _top + 14.0 + ROW_A
+	_banner_y = maxf((row_bottom + cabinet_top) / 2.0, row_bottom + 48.0)
 	_layout()
 
 
@@ -178,34 +169,26 @@ func _layout() -> void:
 	_size = get_viewport().get_visible_rect().size
 	var w := _size.x
 	var y := _top + 14.0
-	# Row A: mode and lives on the left, stats and sound on the right.
+	# One row: mode, lives and the streak on the left, stats and sound on the right.
 	_mode_button.position = Vector2(MARGIN, y)
-	_mode_button.size = Vector2(336, ROW_A)
-	_lives_button.position = Vector2(MARGIN + 336 + GAP, y)
-	_lives_button.size = Vector2(196, ROW_A)
+	_mode_button.size = Vector2(308, ROW_A)
+	_lives_button.position = Vector2(MARGIN + 308 + GAP, y)
+	_lives_button.size = Vector2(176, ROW_A)
 	for i in HEARTS:
-		_place_icon(_hearts[i], 196, ROW_A, 5.0, (i - 1) * 54.0)
+		_place_icon(_hearts[i], 176, ROW_A, 5.0, (i - 1) * 50.0)
 	_sound_button.size = Vector2(ROW_A + 8, ROW_A)
 	_sound_button.position = Vector2(w - MARGIN - _sound_button.size.x, y)
 	_place_icon(_sound_icon, _sound_button.size.x, ROW_A, 5.0)
 	_stats_button.size = Vector2(ROW_A + 8, ROW_A)
 	_stats_button.position = Vector2(_sound_button.position.x - GAP - _stats_button.size.x, y)
 	_place_icon(_stats_button.get_child(0) as TextureRect, _stats_button.size.x, ROW_A, 5.0)
-	# Row B: the score on the left, the streak on the right.
-	var left := MARGIN + 6.0
-	_score_caption.position = Vector2(left, _top + 106)
-	_score_caption.size = Vector2(200, 30)
-	_score_label.position = Vector2(left, _top + 128)
-	_score_label.size = Vector2(w - 2 * MARGIN - 300, 84)
-	_best_label.position = Vector2(left + 110, _top + 106)
-	_best_label.size = Vector2(w - 2 * MARGIN - 420, 30)
-	_streak_panel.size = Vector2(276, 116)
-	_streak_panel.position = Vector2(w - MARGIN - 276, _top + 112)
+	_streak_panel.size = Vector2(maxf(_stats_button.position.x - GAP - _streak_x(), 200.0), ROW_A - 2.0 * PixelUi.UNIT)
+	_streak_panel.position = Vector2(_streak_x(), y)
 	_streak_panel.pivot_offset = _streak_panel.size / 2.0
-	_streak_caption.position = Vector2(0, 8)
-	_streak_caption.size = Vector2(276, 30)
-	_streak_label.position = Vector2(0, 32)
-	_streak_label.size = Vector2(276, 78)
+	_streak_caption.position = Vector2(20, 0)
+	_streak_caption.size = Vector2(130, _streak_panel.size.y)
+	_streak_label.position = Vector2(0, 0)
+	_streak_label.size = Vector2(_streak_panel.size.x - 20, _streak_panel.size.y)
 	_banner.size = Vector2(w, 110)
 	_banner.position = Vector2(0, _banner_y - 55)
 	_banner.pivot_offset = _banner.size / 2.0
@@ -218,6 +201,10 @@ func _layout() -> void:
 		_strip.position = Vector2((w - _strip.size.x) / 2.0, _size.y)
 	if _stats:
 		show_stats(false)
+
+
+func _streak_x() -> float:
+	return MARGIN + 308 + GAP + 176 + GAP
 
 
 ## True if a touch here belongs to the HUD (a button, or the stats window is open), so it isn't a press on the machine.
@@ -254,40 +241,24 @@ func set_sound(on: bool) -> void:
 	_place_icon(_sound_icon, _sound_button.size.x, ROW_A, 5.0)
 
 
-func set_best(best: int) -> void:
-	_best_label.text = "BEST " + Fx.number(best)
-
-
-## The score, at once (a new run).
-func reset_score(score: int) -> void:
-	_score = score
-	_shown = score
-	_score_label.text = Fx.number(score)
-
-
-## The score went up: the amount flies in from `from` (a screen position) and the counter rolls up when it lands.
-func add_score(total: int, gained: int, from: Vector2, color: Color) -> void:
+## The score went up: the amount pops up at `from`, flies to `to` (screen positions) and `on_land` is called when it
+## gets there (the cabinet's marquee then rolls up to the new score).
+func fly_score(gained: int, from: Vector2, to: Vector2, color: Color, on_land: Callable) -> void:
 	var fly := _label("+" + Fx.number(gained), 60, color)
-	fly.add_theme_constant_override("outline_size", 16)
+	fly.add_theme_constant_override("outline_size", 10)
 	fly.add_theme_color_override("font_outline_color", PixelUi.INK)
 	fly.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	fly.size = Vector2(600, 90)
 	fly.pivot_offset = fly.size / 2.0
 	fly.position = from - fly.size / 2.0
 	fly.scale = Vector2.ONE * 0.5
-	var target := _score_label.position + Vector2(140, 42) - fly.size / 2.0
 	var land := func() -> void:
-		# Only if the run it belongs to is still the one on screen (a loss resets the counter at once).
-		if total >= _score:
-			_score = total
 		fly.queue_free()
-		_score_label.pivot_offset = Vector2(100, 42)
-		_score_label.scale = Vector2.ONE * 1.18
-		create_tween().tween_property(_score_label, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		on_land.call()
 	var tween := create_tween()
 	tween.tween_property(fly, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_interval(0.22)
-	tween.tween_property(fly, "position", target, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_property(fly, "position", to - fly.size / 2.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.parallel().tween_property(fly, "scale", Vector2.ONE * 0.55, 0.32)
 	tween.tween_callback(land)
 
@@ -311,7 +282,7 @@ func set_streak(mult: float, bump: bool) -> void:
 		create_tween().tween_property(_streak_panel, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	elif lost:
 		_streak_panel.add_theme_stylebox_override("panel", PixelUi.box(Color8(70, 14, 22), PixelUi.RED))
-		var home := Vector2(_size.x - MARGIN - 276, _top + 112)
+		var home := Vector2(_streak_x(), _top + 14.0)
 		var settle := func() -> void:
 			if _streak <= 1.0:
 				_streak_panel.add_theme_stylebox_override("panel", _streak_box(false))
@@ -472,11 +443,3 @@ func hide_stats() -> void:
 		_stats.queue_free()
 		_stats = null
 		stats_toggled.emit(false)
-
-
-func _process(dt: float) -> void:
-	# The score counter rolls up to where it is heading.
-	if _shown != _score:
-		var step := maxf(absf(_score - _shown) * minf(dt * 9.0, 1.0), 1.0)
-		_shown = move_toward(_shown, _score, step)
-		_score_label.text = Fx.number(_shown)

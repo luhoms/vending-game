@@ -14,10 +14,10 @@ and the items behave the same.
 | --- | --- | --- | --- |
 | Traditional | plain | 1 (LIVES button: 3) | 7.4 items/sec on machines 1-4, 8.2 on 5-8, then +0.3 every two machines up to 10 |
 | Party | items: multiplier fruit, caged fruit (two hits), bombs, ice, reverse | 3 | same as Traditional |
-| Zen | plain | 1 (LIVES button: 3) | 7.4 on every machine, and no speed burst on hits |
+| Zen | plain | 1 (LIVES button: 3) | Traditional's first machine for ever: 7.4 on every machine, it never gets faster |
 
-Every mode is endless. Each machine cleared without a mistake raises the STREAK (x2, x3, ...), which multiplies what
-the next machine pays. The stats window keeps totals for each mode: best score, furthest machine, best streak, and how
+Every mode is endless, and losing never stops you: the next run is live the instant one ends. Each machine cleared
+without a mistake raises the STREAK (x2, x3, ...), which multiplies what the next machine pays. The stats window keeps totals for each mode: best score, furthest machine, best streak, and how
 many streaks of each size there have been.
 
 ## Running it
@@ -50,13 +50,21 @@ mode. `input_checks` drives the real scene with touches, clicks and keys.
 - `scripts/vend.gd`: the rules, pure (no nodes, no clock)
 - `scripts/modes.gd`: the three modes, what a machine is worth, machine names and colours
 - `scripts/game.gd`: the clock, the run, input, and how everything reacts to a press
-- `scripts/cabinet.gd`, `fruit.gd`, `parts.gd`: the 3D machine and fruit, built in code
-- `scripts/effects.gd`, `sfx.gd`, `hud.gd`: particles and camera, sound, the flat UI
+- `scripts/cabinet.gd`, `pixel_tex.gd`, `parts.gd`: the retro 3D machine and its pixel textures, built in code
+- `scripts/fruit.gd`, `shapes.gd`: the fruit, as meshes made in code
+- `scripts/effects.gd`, `sfx.gd`: particles and camera, sound
+- `scripts/hud.gd`, `pixel_ui.gd`: the pixel-style buttons, callouts and stats window
 - `scripts/fx_config.gd`: one table of look-and-feel numbers
 - `scripts/save_data.gd`: what is kept between sessions
 - `tools/make_sounds.py`: makes the sound effects in `assets/sfx`
 
 ## Sounds
 
-The sounds in `assets/sfx` are synthesised by `tools/make_sounds.py` as stand-ins: the Roblox version's sounds are
-Roblox Creator Store assets and can't be shipped outside Roblox. Replace any file with a recording of the same name.
+The sounds in `assets/sfx` are synthesised by `tools/make_sounds.py` (soft mallet tones): the Roblox version's sounds
+are Roblox Creator Store assets and can't be shipped outside Roblox. Replace any file with a recording of the same
+name.
+
+## Credits
+
+The font is Pixelify Sans by The Pixelify Sans Project Authors, under the SIL Open Font License (`assets/fonts/OFL.txt`). All other
+art and sound is made by the code in this repository.

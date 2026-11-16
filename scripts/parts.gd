@@ -99,6 +99,33 @@ static func part(parent: Node, size: Vector3, xform: Transform3D, color: Color, 
 	return instance
 
 
+## A flat picture facing +Z, `size` studs, drawn with hard pixel edges. `color` tints it; `lit` lets the room's light
+## shade it (most of the cabinet's art is unlit, like a lit-up sign); `cutout` drops the picture's clear pixels;
+## `repeat` tiles the picture that many times across and down.
+static func plate(parent: Node, size: Vector2, xform: Transform3D, texture: Texture2D, color := Color.WHITE, lit := false, cutout := false, repeat := Vector2.ONE) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = size
+	instance.mesh = quad
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = texture
+	m.albedo_color = color
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	m.uv1_scale = Vector3(repeat.x, repeat.y, 1.0)
+	if not lit:
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	else:
+		m.roughness = 0.8
+		m.metallic_specular = 0.1
+	if cutout:
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	instance.material_override = m
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.transform = xform
+	parent.add_child(instance)
+	return instance
+
+
 static func set_color(instance: MeshInstance3D, color: Color) -> void:
 	var m: StandardMaterial3D = instance.material_override
 	m.albedo_color = Color(color.r, color.g, color.b, m.albedo_color.a)

@@ -38,6 +38,7 @@ var _args := {}
 var _bot_at := NAN
 var _elapsed := 0.0
 var _shot_done := false
+var _run_id := 0 ## counts runs, so a score still flying to the marquee when its run ends is dropped
 
 
 func _ready() -> void:
@@ -118,12 +119,13 @@ func _build_room() -> void:
 	sun.rotation_degrees = Vector3(-35, 25, 0)
 	sun.light_energy = 0.9
 	add_child(sun)
+	# A wall of big dark panels and a checkered floor, both in hard pixels like the cabinet.
 	var P := Parts
-	P.part(self, Vector3(80, 60, 0.4), Transform3D(Basis.IDENTITY, Vector3(0, 28, -0.7)), Color8(16, 44, 50))
-	P.part(self, Vector3(80, 0.4, 40), Transform3D(Basis.IDENTITY, Vector3(0, -0.2, 8)), Color8(30, 28, 38))
-	for x: float in [-8.2, 8.2]: # gold pilasters either side
-		P.part(self, Vector3(0.5, 60, 0.3), Transform3D(Basis.IDENTITY, Vector3(x, 28, -0.45)), Color8(170, 130, 50), P.METAL)
-	P.part(self, Vector3(80, 0.5, 0.3), Transform3D(Basis.IDENTITY, Vector3(0, 0.25, -0.45)), Color8(170, 130, 50), P.METAL)
+	var wall := PixelTex.panel(Color8(22, 28, 60), Color8(12, 14, 34), Color8(30, 38, 78))
+	P.plate(self, Vector2(96, 64), Transform3D(Basis.IDENTITY, Vector3(0, 32, -0.5)), wall, Color.WHITE, false, false, Vector2(24, 16))
+	var floor_tiles := PixelTex.checker(Color8(34, 96, 110), Color8(20, 60, 74))
+	P.plate(self, Vector2(96, 48), Transform3D(Basis(Vector3.RIGHT, -PI / 2.0), Vector3(0, 0, 23.5)), floor_tiles, Color.WHITE, false, false, Vector2(24, 12))
+	P.part(self, Vector3(96, 0.5, 0.2), Transform3D(Basis.IDENTITY, Vector3(0, 0.25, -0.4)), Color8(8, 8, 12))
 
 
 # Fit the camera to the screen: the cabinet fills the width (or the height, on wide screens), with a band kept clear
@@ -154,7 +156,7 @@ func _layout() -> void:
 	fx.base_transform = Transform3D(Basis.IDENTITY, Vector3(0, centre_y, Cabinet.FRONT_Z + distance))
 	camera.transform = fx.base_transform
 	camera.fov = Fx.CAMERA_FOV
-	hud.set_banner_y(camera.unproject_position(cabinet.sign_position()).y)
+	hud.set_cabinet_top(camera.unproject_position(cabinet.top_position()).y)
 
 
 ## The game clock, in seconds. It stops while the stats window is open, so the cursor waits where it was.
@@ -191,8 +193,9 @@ func _start_run(first := false) -> void:
 	cabinet.update_display(run, now())
 	hud.set_mode(mode, save.lives_for(mode))
 	hud.set_lives(run.lives, run.max_lives)
-	hud.reset_score(0)
-	hud.set_best(int(save.stats_for(variant()).best_score))
+	_run_id += 1
+	cabinet.set_score(0, true)
+	cabinet.set_best(int(save.stats_for(variant()).best_score))
 	hud.set_streak(1.0, false)
 	hud.set_stats_source(save, variant())
 
@@ -265,16 +268,16 @@ func press(t: float) -> void:
 		_on_result(result, streak_before)
 
 
-# A callout on the cabinet's header sign; the machine's name steps aside while it shows.
+# A callout in the gap above the cabinet.
 func _banner(text: String, color: Color, big := false) -> void:
 	hud.banner(text, color, big)
-	cabinet.hide_title(1.45 if big else 0.8)
 
 
 func _exit_tree() -> void:
 	Parts.clear_cache()
 	Fruit.clear_cache()
 	PixelUi.clear_cache()
+	PixelTex.clear_cache()
 
 
 func _buzz(ms: int) -> void:
@@ -358,7 +361,12 @@ func _on_result(result: Vend.Result, streak_before: int) -> void:
 		machines += 1
 		best_streak = maxf(best_streak, result.mult)
 		sfx.vend_complete()
-		hud.add_score(score, gained, camera.unproject_position(cabinet.tray_position()), Fx.GOLD if result.perfect else Fx.WHITE)
+		var total := score
+		var id := _run_id
+		var land := func() -> void:
+			if id == _run_id:
+				cabinet.set_score(total)
+		hud.fly_score(gained, camera.unproject_position(cabinet.tray_position()), camera.unproject_position(cabinet.score_position()), Fx.GOLD if result.perfect else Fx.WHITE, land)
 		cabinet.flash_all(Fx.GOLD if result.perfect else Fx.WHITE)
 		cabinet.vend_all()
 		_buzz(Fx.BUZZ_CLEAR)
@@ -375,7 +383,7 @@ func _on_result(result: Vend.Result, streak_before: int) -> void:
 				# Every eighth machine is the top of the Roblox game's run: mark it.
 				var lap := paid_tier / Vend.REF_TIERS
 				_banner("ALL 8 CLEARED!" if lap == 1 else "LAP %d CLEARED!" % lap, Fx.GOLD, true)
-				fx.burst(cabinet.sign_position(), Fx.GOLD, 60, "burst", Fx.FX_SCALE * 1.6)
+				fx.burst(cabinet.score_position(), Fx.GOLD, 60, "burst", Fx.FX_SCALE * 1.6)
 				fx.punch(-4.0)
 
 	# The streak tracker: every streak that ends is counted, by the size it reached.
