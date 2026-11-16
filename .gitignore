@@ -1,0 +1,12 @@
+# Godot 4
+.godot/
+*.translation
+export_presets.cfg.bak
+# Builds
+build/
+*.apk
+*.aab
+*.ipa
+# Android export
+android/
+.DS_Store
