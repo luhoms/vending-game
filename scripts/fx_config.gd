@@ -23,7 +23,7 @@ const FRUIT_REST := 0.75 ## a resting fruit's centre above the floor
 const FRUIT_STAY := 3.0 ## seconds the fruit lies on the floor
 
 # Runs
-const RESTART_DELAY := 0.35 ## seconds between a run ending and the next one starting (Roblox)
+const RUN_OVER_FLASH := 0.35 ## seconds the neon edges stay red after a run ends (the next run is already live)
 const MISTAKE_SHAKE := 0.6 ## camera shake on a mistake, degrees (Roblox)
 const RUN_OVER_SHAKE := 0.6
 
@@ -38,8 +38,11 @@ const TOP_BAND := 0.13 ## share of the screen's height kept clear above the cabi
 const BOTTOM_BAND := 0.04 ## ...and below it for the floor
 const SPARE_TOP := 0.6 ## on tall screens, this share of the spare height goes above the cabinet
 
-# Input
+# Input and timing
 const PRESS_OFFSET := 0.0 ## seconds taken off every press time, to make up for a phone's touch and display lag
+## The cursor is drawn where it will be this many screen frames from now, because a frame drawn now is only seen about
+## a frame later. 0 draws it exactly where it is (as the Roblox version does); raise it if hits seem to land late.
+const DRAW_AHEAD_FRAMES := 1.0
 
 # Sound (Roblox's SoundManager / FxConfig.Sound.vend)
 const HIT_SCALE: Array[int] = [0, 2, 4, 7, 9, 12, 14, 16] ## semitones above the ding for the 1st, 2nd... hit on a machine

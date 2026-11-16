@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ##   traditional  plain fruit, one life (or three with LIVES on), the machines get faster
 ##   party        items (multiplier, caged, bomb, ice, reverse) and three lives: the Roblox game's lives mode
-##   zen          plain fruit at one steady speed with no burst, one life (or three), for as long as you last
+##   zen          plain fruit, traditional's first machine for ever: the speed never goes up. One life (or three)
 ##
 ## Every mode is endless. Machines 1-8 of traditional and party run at the Roblox game's speeds.
 
@@ -13,7 +13,7 @@ const LIST: Array[String] = ["traditional", "party", "zen"]
 const INFO := {
 	"traditional": {"title": "TRADITIONAL", "blurb": "Plain fruit. It gets faster.", "lives_toggle": true},
 	"party": {"title": "PARTY", "blurb": "Items and three lives.", "lives_toggle": false},
-	"zen": {"title": "ZEN", "blurb": "One steady speed. No rush.", "lives_toggle": true},
+	"zen": {"title": "ZEN", "blurb": "It never gets faster.", "lives_toggle": true},
 }
 
 const LIVES := 3 ## lives with LIVES on (and always in party)
@@ -68,8 +68,7 @@ static func params(mode: String, lives_on: bool, phase: float, seed: int) -> Ven
 	p.mults = mode == "party"
 	p.specials = mode == "party"
 	if mode == "zen":
-		p.speeds = ZEN_SPEED
-		p.boost_step = 0.0
+		p.speeds = ZEN_SPEED # machine 1's speed on every machine; hits still burst the cursor
 	else:
 		p.late_step = LATE_STEP
 		p.late_every = LATE_EVERY

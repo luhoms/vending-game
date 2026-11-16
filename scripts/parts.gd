@@ -81,6 +81,11 @@ static func _mesh(shape: String, size: Vector3) -> Mesh:
 	return mesh
 
 
+## The shared mesh for a shape: "block", "ball" (size.x across) or "cylinder" (lying along X, as in Roblox).
+static func mesh_for(shape: String, size: Vector3) -> Mesh:
+	return _mesh(shape, size)
+
+
 ## One part. `own` gives it a material of its own, for parts whose colour changes while the game runs.
 static func part(parent: Node, size: Vector3, xform: Transform3D, color: Color, kind := PLASTIC, shape := "block", alpha := 1.0, own := false) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
@@ -108,12 +113,12 @@ static func set_alpha(instance: MeshInstance3D, alpha: float) -> void:
 	m.albedo_color.a = alpha
 
 
-## The heavy display font (the engine's own font, emboldened), shared by every label.
+## The display font (Pixelify Sans, bold), shared by every label on the cabinet and the HUD.
 static func font() -> Font:
 	if _font == null:
 		_font = FontVariation.new()
-		_font.base_font = ThemeDB.fallback_font
-		_font.variation_embolden = 0.9
+		var path := "res://assets/fonts/pixelify-sans-700.woff2"
+		_font.base_font = load(path) if ResourceLoader.exists(path) else ThemeDB.fallback_font
 	return _font
 
 

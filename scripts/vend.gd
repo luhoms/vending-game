@@ -79,6 +79,7 @@ class Params:
 	var late_every := 1 ## ...every this many machines...
 	var speed_cap := 0.0 ## ...up to this (0 = no cap)
 	var boost_step := Vend.BOOST_STEP
+	var start_delay := Vend.START_DELAY ## seconds before the cursor moves
 
 
 ## What one press did.
@@ -157,7 +158,7 @@ func _init(params: Params, now: float) -> void:
 	speed_cap = params.speed_cap
 	boost_step = params.boost_step
 	rng = posmod(params.seed, 2147483646) + 1
-	t0 = now + START_DELAY
+	t0 = now + maxf(params.start_delay, 0.0)
 	phase0 = fposmod(params.phase, float(ICONS))
 	base = start_speed(tier)
 	lives = maxi(1, params.lives)

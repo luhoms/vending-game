@@ -5,7 +5,7 @@ extends SceneTree
 ##   godot --headless -s tests/input_checks.gd -- --nosave --seed=5
 ## Exit code = number of failed checks.
 
-const EXPECTED := 15
+const EXPECTED := 19
 
 var passed := 0
 var failures: Array[String] = []
@@ -88,7 +88,7 @@ func _run() -> void:
 	await wait(0.5)
 
 	await tap(middle)
-	check("one touch = one press (not a second from the made-up mouse click)", game.run.presses == 1, game.run.presses)
+	check("one touch = one press (not a second from the made-up mouse click)", game.presses_total == 1, game.presses_total)
 	await wait(0.3)
 
 	# Two thumbs: the second lands while the first is still down.
@@ -101,29 +101,29 @@ func _run() -> void:
 	touch(middle + Vector2(-200, 300), 0, false)
 	touch(middle + Vector2(200, 300), 1, false)
 	await process_frame
-	check("a second finger while the first is down is its own press", game.run.presses == 3 or game.run.over, game.run.presses)
-	await wait(0.8) # whatever those hit, let a fresh run start if one ended
+	check("a second finger while the first is down is its own press", game.presses_total == 3, game.presses_total)
+	await wait(0.3)
 
-	var before: int = game.run.presses
+	var before: int = game.presses_total
 	await click(middle)
-	check("a mouse click presses", game.run.presses == before + 1 or game.run.presses == 0 or game.run.over, [before, game.run.presses])
-	await wait(0.8)
-	before = game.run.presses
+	check("a mouse click presses", game.presses_total == before + 1, [before, game.presses_total])
+	await wait(0.3)
+	before = game.presses_total
 	await key(KEY_SPACE)
-	check("the space bar presses", game.run.presses == before + 1 or game.run.presses == 0 or game.run.over, [before, game.run.presses])
-	await wait(0.8)
+	check("the space bar presses", game.presses_total == before + 1, [before, game.presses_total])
+	await wait(0.3)
 
 	# The HUD's buttons take their own touches.
 	var hud: Hud = game.hud
-	before = game.run.presses
+	before = game.presses_total
 	var mode_before: String = game.mode
 	await tap(centre_of(hud._mode_button))
 	check("touching MODE switches mode", game.mode != mode_before, game.mode)
-	check("...and is not a press on the machine", game.run.presses == 0)
+	check("...and is not a press on the machine", game.presses_total == before, [before, game.presses_total])
 	check("the mode goes traditional -> party", mode_before == "traditional" and game.mode == "party")
 	check("party starts with three lives", game.run.lives == 3 and game.run.specials)
 	await tap(centre_of(hud._mode_button))
-	check("party -> zen: no burst, no items", game.mode == "zen" and game.run.boost_step == 0.0 and not game.run.specials)
+	check("party -> zen: plain fruit at one speed", game.mode == "zen" and not game.run.specials and not game.run.mults and game.run.start_speed(30) == game.run.start_speed(1))
 	await tap(centre_of(hud._lives_button))
 	check("LIVES gives zen three lives", game.run.lives == 3, game.run.lives)
 	await tap(centre_of(hud._lives_button))
@@ -133,12 +133,31 @@ func _run() -> void:
 	await tap(centre_of(hud._stats_button))
 	check("touching STATS opens the stats window", hud.stats_open())
 	var frozen: float = game.now()
+	var before_stats: int = game.presses_total
 	await tap(middle)
 	await wait(0.3)
-	check("...the clock stops and touches don't press while it is open", game.now() == frozen and game.run.presses == 0, [frozen, game.now(), game.run.presses])
+	check("...the clock stops and touches don't press while it is open", game.now() == frozen and game.presses_total == before_stats, [frozen, game.now(), game.presses_total])
 	hud.hide_stats()
 	await wait(0.1)
 	check("closing it starts the clock again", game.now() > frozen and not hud.stats_open())
+
+	# Losing never stops play: the next run is live in the same instant (zen, one life, at this point).
+	await wait(0.3)
+	var run_before: Vend = game.run
+	var first: float = run_before.next_target(game.now() + 0.01)
+	game.press(first)
+	var lit_index: int = run_before.index_at(first)
+	var again := first + 0.02
+	while run_before.index_at(again) == lit_index:
+		again += 0.002
+	while run_before.index_at(again) != lit_index:
+		again += 0.002
+	game.press(again) # the same fruit twice: a mistake, and with one life the run is over
+	check("a mistake on the last life ends the run", run_before.over)
+	check("...and a new run is already live, with no wait before its cursor moves", game.run != run_before and not game.run.over and game.run.presses == 0 and game.run.t0 <= game.now())
+	check("...its cursor carrying on from where the old one was", game.run.index_at(game.run.t0) == run_before.index_at(game.run.t0))
+	await tap(middle)
+	check("...so the very next touch counts", game.run.presses == 1, game.run.presses)
 
 	for line in failures:
 		print("FAIL ", line)

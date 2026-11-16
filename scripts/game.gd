@@ -3,7 +3,7 @@ extends Node3D
 ## touches into presses, and makes the cabinet, effects, sounds and HUD react.
 ##
 ## There is no start button: the cursor is always running, a cleared machine rolls straight into the next, and when a
-## run ends the next one starts RESTART_DELAY later (as in the Roblox game).
+## run ends the next one is live in the same instant, its cursor carrying on from where it was.
 ##
 ## Testing aids (after `--` on the command line; none of this is reachable in a normal launch):
 ##   --mode=party  --lives      start in this mode / with lives on (not saved)
@@ -21,6 +21,7 @@ var run: Vend
 var score := 0
 var machines := 0 ## cleared this run
 var best_streak := 1.0 ## the highest streak MULT this run
+var presses_total := 0 ## presses that counted since the game opened (the tests read it)
 var cabinet: Cabinet
 var fx: Effects
 var sfx: Sfx
@@ -28,7 +29,8 @@ var hud: Hud
 var camera: Camera3D
 
 var _rng := RandomNumberGenerator.new()
-var _restart_at := 0.0 ## (real seconds) when the next run starts
+var _save_at := -1.0 ## (seconds played) when to write the save file; -1 = nothing to write
+var _frame := 1.0 / 60.0 ## the screen's frame time, for drawing the cursor where it will be when the frame is shown
 var _clock_offset := 0.0 ## real seconds the game clock has been stopped for
 var _paused_at := -1.0 ## the game clock's reading while it is stopped (-1 = running)
 var _last_cursor := -1
@@ -77,8 +79,26 @@ func _ready() -> void:
 
 	get_viewport().size_changed.connect(_layout)
 	_layout()
+	var refresh := DisplayServer.screen_get_refresh_rate()
+	if refresh > 1.0:
+		_frame = 1.0 / refresh
+	_boot()
+
+
+# Before play starts, draw one of everything behind a cover (every kind of item, both kinds of particle, pop text),
+# so the graphics card builds what it needs now and not in the middle of the first hit.
+func _boot() -> void:
+	hud.cover(true)
+	cabinet.warm_up()
+	var at := cabinet.cell_front(0)
+	fx.burst(at, Fx.GOLD, 4, "sparkle", Fx.FX_SCALE)
+	fx.burst(at, Fx.GOLD, 4, "burst", Fx.FX_SCALE)
+	fx.pop_text(at, "+1", Fx.GOLD, 1.6)
+	for i in 3:
+		await get_tree().process_frame
 	cabinet.show_plain()
-	_start_run()
+	_start_run(true)
+	hud.cover(false)
 	if _args.has("stats"):
 		hud.show_stats(true)
 
@@ -152,9 +172,13 @@ func variant() -> String:
 	return Modes.variant(mode, save.lives_for(mode))
 
 
-func _start_run() -> void:
+# Start a run. The very first waits a moment before its cursor moves; every later one is live at once, with the
+# cursor carrying on from where it was, so losing never stops you playing.
+func _start_run(first := false) -> void:
 	var seed := int(_args.seed) if _args.has("seed") else _rng.randi_range(1, 2147483646)
-	var params := Modes.params(mode, save.lives_for(mode), _rng.randf() * Vend.ICONS, seed)
+	var phase := run.phase_at(now()) if run != null else _rng.randf() * Vend.ICONS
+	var params := Modes.params(mode, save.lives_for(mode), phase, seed)
+	params.start_delay = Vend.START_DELAY if first else 0.0
 	if _args.has("tier"):
 		params.tier = maxi(int(_args.tier), 1)
 	run = Vend.new(params, now())
@@ -162,11 +186,11 @@ func _start_run() -> void:
 	machines = 0
 	best_streak = 1.0
 	_bot_at = NAN
-	cabinet.power_down = false
 	cabinet.set_tier(run.tier)
 	cabinet.show_board(run, true)
 	cabinet.update_display(run, now())
 	hud.set_mode(mode, save.lives_for(mode))
+	hud.set_lives(run.lives, run.max_lives)
 	hud.reset_score(0)
 	hud.set_best(int(save.stats_for(variant()).best_score))
 	hud.set_streak(1.0, false)
@@ -176,8 +200,8 @@ func _start_run() -> void:
 func _process(dt: float) -> void:
 	_elapsed += dt
 	var t := now()
-	if (run == null or run.over) and _real() >= _restart_at and _paused_at < 0.0:
-		_start_run()
+	if _save_at >= 0.0 and _elapsed >= _save_at:
+		_save_now()
 
 	if _args.has("bot") and run != null and not run.over and _paused_at < 0.0:
 		if is_nan(_bot_at):
@@ -189,7 +213,8 @@ func _process(dt: float) -> void:
 			_bot_at = NAN
 			press(at)
 
-	var cursor := cabinet.update(run, t, dt)
+	# What is drawn now reaches the screen about a frame from now: draw the cursor where it will be by then.
+	var cursor := cabinet.update(run, t + (Fx.DRAW_AHEAD_FRAMES * _frame if _paused_at < 0.0 else 0.0), dt)
 	if cursor != _last_cursor:
 		_last_cursor = cursor
 		if cursor >= 0 and t >= run.t0 and run.speed_at(t) < Fx.TICK_BELOW_SPEED:
@@ -236,6 +261,7 @@ func press(t: float) -> void:
 	var streak_before := run.streak
 	var result := run.press(t)
 	if result:
+		presses_total += 1
 		_on_result(result, streak_before)
 
 
@@ -247,6 +273,8 @@ func _banner(text: String, color: Color, big := false) -> void:
 
 func _exit_tree() -> void:
 	Parts.clear_cache()
+	Fruit.clear_cache()
+	PixelUi.clear_cache()
 
 
 func _buzz(ms: int) -> void:
@@ -359,30 +387,43 @@ func _on_result(result: Vend.Result, streak_before: int) -> void:
 	if ended > 0:
 		save.record_streak(variant(), 1 + ended)
 	hud.set_streak(run.mult(), run.streak > streak_before)
+	hud.set_lives(run.lives, run.max_lives)
 
 	if result.over:
 		_end_run(true)
-	cabinet.update_display(run, now())
+		_start_run()
+	else:
+		cabinet.update_display(run, now())
 
 
-# The run is over (a mistake, a bomb, or given up by switching mode): count it, flash red, and the next one follows.
+# The run is over (a mistake, a bomb, or given up by switching mode): count it and flash red. The caller starts the
+# next one straight away.
 func _end_run(show: bool) -> void:
 	run.over = true
 	var new_best := save.record_run(variant(), score, machines, run.tier)
-	if not _args.has("nosave"):
-		save.save_file()
+	_save_soon()
 	if show:
 		hud.run_over(score, run.tier, best_streak, new_best)
-		cabinet.power_down = true
-		cabinet.set_trims(Fx.RED)
+		cabinet.flash_trims(Fx.RED, Fx.RUN_OVER_FLASH)
 		fx.shake(Fx.RUN_OVER_SHAKE)
-		var recover := func() -> void:
-			cabinet.power_down = false
-			cabinet.set_trims(cabinet.tier_color)
-			if run == null or run.over:
-				cabinet.show_plain()
-		get_tree().create_timer(Fx.RESTART_DELAY).timeout.connect(recover)
-	_restart_at = _real() + Fx.RESTART_DELAY
+
+
+# Write the save file a moment from now, not in the middle of a press.
+func _save_soon() -> void:
+	if _save_at < 0.0:
+		_save_at = _elapsed + 1.0
+
+
+func _save_now() -> void:
+	_save_at = -1.0
+	if not _args.has("nosave"):
+		save.save_file()
+
+
+func _notification(what: int) -> void:
+	# Leaving the app: write anything not yet saved.
+	if what in [NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_WM_GO_BACK_REQUEST] and _save_at >= 0.0:
+		_save_now()
 
 
 # Give up the run in progress (it still counts, with its streak) and start again at once.
@@ -394,15 +435,13 @@ func _abandon_run() -> void:
 			_end_run(false)
 		else:
 			run.over = true
-	_restart_at = 0.0
 
 
 func _next_mode() -> void:
 	_abandon_run()
 	mode = Modes.LIST[(Modes.LIST.find(mode) + 1) % Modes.LIST.size()]
 	save.mode = mode
-	if not _args.has("nosave"):
-		save.save_file()
+	_save_soon()
 	_banner(String(Modes.INFO[mode].title), Fx.CYAN, true)
 	sfx.play("coin", 1.2, 0.4)
 	_start_run()
@@ -413,8 +452,7 @@ func _toggle_lives() -> void:
 		return
 	_abandon_run()
 	save.lives_on[mode] = not save.lives_for(mode)
-	if not _args.has("nosave"):
-		save.save_file()
+	_save_soon()
 	_banner("THREE LIVES" if save.lives_for(mode) else "ONE LIFE", Fx.CYAN)
 	sfx.play("coin", 1.2, 0.4)
 	_start_run()
@@ -424,8 +462,7 @@ func _toggle_sound() -> void:
 	save.sound = not save.sound
 	sfx.muted = not save.sound
 	hud.set_sound(save.sound)
-	if not _args.has("nosave"):
-		save.save_file()
+	_save_soon()
 	sfx.play("coin", 1.2, 0.4)
 
 
@@ -436,4 +473,3 @@ func _on_stats(open: bool) -> void:
 	elif not open and _paused_at >= 0.0:
 		_clock_offset = _real() - _paused_at
 		_paused_at = -1.0
-		_restart_at = maxf(_restart_at, _real())

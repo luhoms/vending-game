@@ -44,7 +44,6 @@ class Cell:
 var fx: Effects
 var cells: Array[Cell] = []
 var tier_color := Fx.WHITE
-var power_down := false
 
 var _body: MeshInstance3D
 var _body_home := Transform3D.IDENTITY
@@ -66,6 +65,7 @@ var _flying: Array = [] ## fruit shooting out of the tray: dictionaries (see _sh
 var _pending: Array = [] ## fruit waiting their turn to shoot: {at, kind, slot}
 var _clock := 0.0 ## seconds this cabinet has been updated for (drives the decoration, not the rules)
 var _title_hidden_until := 0.0
+var _trims_until := -1.0 ## while the clock is short of this, the trims hold a flash colour
 var _rng := RandomNumberGenerator.new()
 
 
@@ -281,7 +281,15 @@ func show_board(run: Vend, pop: bool) -> void:
 				create_tween().tween_property(cell.item, "scale", Vector3.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-## A plain set of fruit (before the first run, or after one ends).
+## Put one of every kind of item behind the glass for a few frames while the game loads, so the first one met in
+## play doesn't cost a stutter while its graphics are built.
+func warm_up() -> void:
+	var kinds := [["mult", 5], ["strong", 1], ["bomb", 1], ["ice", 1], ["reverse", 1], ["mult", 100]]
+	for i in cells.size():
+		_dress_cell(cells[i], {"kind": kinds[i][0], "mult": kinds[i][1]}, 0)
+
+
+## A plain set of fruit (before the first run).
 func show_plain() -> void:
 	for cell in cells:
 		if cell.kind != "fruit" or cell.item == null:
@@ -379,13 +387,19 @@ func set_tier(tier: int) -> void:
 	tier_color = Modes.tier_color(tier)
 	Parts.set_text(_title, Modes.tier_title(tier))
 	_title.modulate = Color(tier_color, _title.modulate.a)
-	if not power_down:
+	if _trims_until < 0.0:
 		set_trims(tier_color)
 
 
 ## A callout is showing on the header sign: the machine's name steps aside for `seconds`.
 func hide_title(seconds: float) -> void:
 	_title_hidden_until = _clock + seconds
+
+
+## Flash the neon edges a colour for a moment (red when a run ends), then back to the machine's colour.
+func flash_trims(color: Color, seconds: float) -> void:
+	set_trims(color)
+	_trims_until = _clock + seconds
 
 
 func set_trims(color: Color) -> void:
@@ -411,7 +425,7 @@ func update_display(run: Vend, t: float) -> void:
 	for i in _life_lamps.size():
 		var lamp := _life_lamps[i]
 		lamp.visible = i < run.max_lives and run.max_lives > 1
-		Parts.set_color(lamp, Fx.DIM if power_down else (Color8(80, 255, 140) if i < run.lives else Color8(60, 20, 24)))
+		Parts.set_color(lamp, Color8(80, 255, 140) if i < run.lives else Color8(60, 20, 24))
 
 
 func _show_speed(run: Vend, t: float) -> void:
@@ -529,13 +543,16 @@ func update(run: Vend, t: float, dt: float) -> int:
 	_clock += dt
 	_update_flying(dt)
 	_title.modulate.a = move_toward(_title.modulate.a, 0.0 if _clock < _title_hidden_until else 1.0, dt * 8.0)
+	if _trims_until >= 0.0 and _clock >= _trims_until:
+		_trims_until = -1.0
+		set_trims(tier_color)
 	var live := run != null and not run.over
-	var cursor := run.index_at(t) if live and not power_down else -1
+	var cursor := run.index_at(t) if live else -1
 	var color := tier_color
 
 	for cell in cells:
 		var lit := live and run.lit[cell.index]
-		var frame_color := Fx.DIM if power_down else (Fx.GOLD if lit else color.lerp(Fx.DIM, 0.6))
+		var frame_color := Fx.GOLD if lit else color.lerp(Fx.DIM, 0.6)
 		for bar in cell.frame:
 			Parts.set_color(bar, Parts.get_color(bar).lerp(frame_color, minf(dt * 30.0, 1.0)))
 		# Lit fruit sit on a warm gold glow, kept fairly dark so the white cursor stands out over it.
@@ -546,7 +563,7 @@ func update(run: Vend, t: float, dt: float) -> int:
 			unlit = (Color.from_hsv(fposmod(_clock * 0.5, 1.0), 0.8, 1.0) if cell.mult >= 100 else Fx.mult_color(cell.mult)).lerp(Fx.DIM, 0.5)
 		elif Fx.KIND_TAG.has(cell.kind):
 			unlit = (Fx.KIND_TAG[cell.kind].color as Color).lerp(Fx.DIM, 0.7)
-		var back_color := Fx.DIM if power_down else (Fx.GOLD.lerp(Fx.DIM, Fx.LIT_DARKEN) if lit else unlit)
+		var back_color := Fx.GOLD.lerp(Fx.DIM, Fx.LIT_DARKEN) if lit else unlit
 		var now_color := Parts.get_color(cell.back).lerp(back_color, minf(dt * 18.0, 1.0))
 		now_color.a = 0.9 if lit else 0.7
 		(cell.back.material_override as StandardMaterial3D).albedo_color = now_color
@@ -591,6 +608,6 @@ func update(run: Vend, t: float, dt: float) -> int:
 	var hot := color.lerp(Fx.WHITE, clampf(run.boost_at(t) / Vend.BOOST_MAX, 0.0, 0.8) if run != null else 0.0)
 	for i in count:
 		var distance := fposmod(head - (i + 1), float(count))
-		var glow := 0.0 if power_down else maxf(0.0, 1.0 - distance / Fx.CHASE_TAIL)
+		var glow := maxf(0.0, 1.0 - distance / Fx.CHASE_TAIL)
 		Parts.set_color(_bulbs[i], Fx.DIM.lerp(hot, 0.18 + 0.82 * glow))
 	return cursor

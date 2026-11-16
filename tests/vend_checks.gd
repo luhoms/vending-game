@@ -7,7 +7,7 @@ extends SceneTree
 ## Exit code = number of failed checks.
 
 const T := 1000.0 # a pretend clock
-const EXPECTED := 89 # checks in this file; fewer ran = a script error
+const EXPECTED := 91 # checks in this file; fewer ran = a script error
 
 var passed := 0
 var failures: Array[String] = []
@@ -360,13 +360,18 @@ func modes() -> void:
 	check("...and stops at the cap", trad.start_speed(19) == Modes.SPEED_CAP and trad.start_speed(500) == Modes.SPEED_CAP, trad.start_speed(19))
 	check("zen: the same speed on every machine", zen.start_speed(1) == 7.4 and zen.start_speed(40) == 7.4)
 
-	# Zen: no burst.
+	# Zen plays like traditional's first machine: the same base speed and the same burst on a hit.
+	check("zen starts at traditional's starting speed", zen.base == trad.base)
 	var t := zen.next_target(zen.t0)
 	zen.press(t)
-	check("zen: lighting a fruit doesn't speed the cursor up", zen.boost == 0.0 and zen.speed_at(t) == 7.4)
+	check("zen: lighting a fruit bursts the cursor, as in traditional", absf(zen.boost - Vend.BOOST_STEP) < 1e-9)
 	t = trad.next_target(trad.t0)
 	trad.press(t)
-	check("traditional: it does", absf(trad.boost - Vend.BOOST_STEP) < 1e-9)
+	check("traditional: the same burst", absf(trad.boost - Vend.BOOST_STEP) < 1e-9)
+	var quick := Modes.params("traditional", false, 0.0, 5)
+	quick.start_delay = 0.0
+	var at_once := Vend.new(quick, T)
+	check("a run with no start delay can be pressed at once", at_once.t0 == T and at_once.press(T + 0.01) != null)
 
 	# Endless: machine 8 doesn't end the run, and the streak keeps climbing.
 	var run := Vend.new(Modes.params("traditional", false, 0.0, 9), T)
