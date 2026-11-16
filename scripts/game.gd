@@ -185,8 +185,9 @@ func _process(dt: float) -> void:
 			if not is_nan(target):
 				_bot_at = target + _rng.randf_range(-1.0, 1.0) * float(_args.bot)
 		if not is_nan(_bot_at) and t >= _bot_at:
+			var at := _bot_at # the moment it meant to press, however late this frame is
 			_bot_at = NAN
-			press(t)
+			press(at)
 
 	var cursor := cabinet.update(run, t, dt)
 	if cursor != _last_cursor:

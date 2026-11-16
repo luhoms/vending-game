@@ -114,6 +114,9 @@ func pop_text(at: Vector3, text: String, color: Color, size: float) -> void:
 	var height := size * Fx.FX_SCALE
 	var measured := label.font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, 96)
 	label.pixel_size = minf(height / maxf(measured.y, 1.0), height * 2.4 / maxf(measured.x, 1.0)) * 1.25
+	# Keep wide words on the screen: slide them in from the edges.
+	var reach := maxf(Fx.VIEW_WIDTH / 2.0 - 0.3 - measured.x * label.pixel_size / 2.0, 0.0)
+	at.x = clampf(at.x, -reach, reach)
 	label.position = at
 	label.scale = Vector3.ONE * 0.4
 	add_child(label)
